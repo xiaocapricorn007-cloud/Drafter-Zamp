@@ -1,0 +1,60 @@
+{
+  "seller": "Zamp",
+  "about": "Zamp provides digital employees that take ownership of entire finance and back-office functions end to end, involving people only when needed.",
+  "tone": "Plain, warm and direct. Short sentences. Sounds like one thoughtful person writing to another.",
+  "default_ask": "a 15-minute call",
+  "offerings": [
+    {
+      "id": "invoices",
+      "name": "Invoice processing and AP approvals",
+      "plain": "Digital employees read invoices, match them and move them through approval.",
+      "problems": ["Slow invoice approvals", "AP teams growing with invoice volume", "Manual invoice checking"],
+      "buying_signals": ["Hiring AP analysts or AP clerks", "Comments about slow close or manual invoice work", "Fast growth in vendors or transactions", "A new ERP or finance system"],
+      "search_terms": ["hiring accounts payable", "invoice processing"],
+      "proof": ["Reduced Instacart's AP approval times from 2 weeks to 2 days, automating 80% of manual work", "Processed 95%+ of Mindbody's invoices end-to-end, involving humans only when needed"]
+    },
+    {
+      "id": "requisitions",
+      "name": "Purchase request approvals",
+      "plain": "Digital employees take purchase requests through approval.",
+      "problems": ["Purchase requests stuck waiting for approval", "Procurement teams overloaded with routine requests"],
+      "buying_signals": ["Hiring procurement analysts", "Comments about slow purchasing or procurement backlogs"],
+      "search_terms": ["procurement transformation"],
+      "proof": ["Automated 85% of Amgen's purchase requisitions through approval, cutting turnaround time 60%"]
+    },
+    {
+      "id": "close",
+      "name": "Accounting close",
+      "plain": "Digital employees take on the repeated work in the month-end close.",
+      "problems": ["Month-end close taking too long", "The close depending on people working late"],
+      "buying_signals": ["Hiring accountants or controllers", "Comments about the month-end close", "Preparing for an IPO or a stricter audit", "An acquisition that adds new entities"],
+      "search_terms": ["month-end close finance", "acquisition"],
+      "proof": ["Eliminated 75% of human touchpoints in Block's accounting close process"]
+    },
+    {
+      "id": "invoice_audit",
+      "name": "Invoice audit",
+      "plain": "Digital employees audit invoices quickly and at lower cost.",
+      "problems": ["Invoice audits taking too long", "High outsourcing cost for back-office checks"],
+      "buying_signals": ["Logistics or freight growth", "Outsourcing or BPO contracts in finance", "Cost-cutting programmes in finance operations"],
+      "search_terms": ["finance outsourcing"],
+      "proof": ["Reduced Uber Freight's invoice audit time from 1 day to 1 hour, at 30% lower cost than a BPO"]
+    },
+    {
+      "id": "chargebacks",
+      "name": "Chargeback filing",
+      "plain": "Digital employees file chargebacks quickly so deadlines are not missed.",
+      "problems": ["Missed chargeback deadlines", "Slow manual dispute handling"],
+      "buying_signals": ["Banks or card issuers launching new card products", "Hiring dispute or chargeback analysts"],
+      "search_terms": ["card disputes chargebacks"],
+      "proof": ["Filed chargebacks in under 10 minutes per case at Wio, with zero missed network deadlines"]
+    }
+  ],
+  "role_focus": [
+    {"match": ["cfo", "chief financial", "finance director", "vp finance", "head of finance"], "cares_about": ["Cost", "Speed of the close", "Control", "Not adding headcount"], "lead_with": "cost, control and not adding headcount", "ask": "a 15-minute call"},
+    {"match": ["controller", "comptroller", "chief accountant"], "cares_about": ["Fewer errors", "Cleaner audits", "A faster close"], "lead_with": "fewer errors, cleaner audits and a faster close", "ask": "a short walkthrough"},
+    {"match": ["accounts payable", "ap manager", "ap lead", "finance operations", "finance ops"], "cares_about": ["Team workload", "Repetitive work", "Backlogs"], "lead_with": "the repetitive work disappearing", "ask": "whether this matches their team's experience"},
+    {"match": ["procurement", "purchasing", "supply chain"], "cares_about": ["Approval speed", "Backlogs", "Supplier experience"], "lead_with": "requests moving without chasing", "ask": "a 15-minute call"}
+  ],
+  "default_role_focus": {"cares_about": ["Getting routine work off the team's plate", "Cost"], "lead_with": "routine work no longer needing people", "ask": "a 15-minute call"}
+}

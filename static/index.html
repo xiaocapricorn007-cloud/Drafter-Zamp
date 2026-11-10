@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Drafter</title>
+  <meta name="description" content="Write a first message people remember.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none' stroke='%236E1423' stroke-width='5' stroke-linecap='round'%3E%3Cpath d='M32 4v7M30 17 15 58M34 17l15 41M21 42a22 22 0 0 0 22 0'/%3E%3Ccircle cx='32' cy='14' r='4'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="signed-out">
+  <aside class="sidebar" id="sidebar" aria-label="Your drafts">
+    <div class="side-top">
+      <a class="brand" href="#/" id="brand" aria-label="Drafter, start over"></a>
+      <button class="icon-btn" id="side-close" type="button" aria-label="Hide the sidebar" title="Hide the sidebar"></button>
+    </div>
+    <a class="new-draft" href="#/" id="new-draft"></a>
+    <nav class="side-list" id="side-list" aria-label="Drafts and folders"></nav>
+    <a class="past-link" href="#/past">Past work</a>
+    <div class="side-foot" id="side-foot"></div>
+  </aside>
+  <button class="icon-btn side-open" id="side-open" type="button" aria-label="Show the sidebar" title="Show the sidebar"></button>
+  <div class="scrim" id="scrim"></div>
+  <main id="view"></main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

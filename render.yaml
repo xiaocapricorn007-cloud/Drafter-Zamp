@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: drafter
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: SERPER_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: HUNTER_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: TOKEN_KEY
+        generateValue: true
