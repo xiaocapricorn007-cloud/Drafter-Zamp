@@ -81,6 +81,9 @@ class Fake:
         self._wait()
         return getattr(self, f"_{purpose}")(user)
 
+    def check_json(self, purpose, system, user, schema):
+        return self.light_json(purpose, system, user, schema)
+
     def deep_json(self, purpose, system, user, schema):
         self.calls.append(("deep", purpose))
         self._wait()

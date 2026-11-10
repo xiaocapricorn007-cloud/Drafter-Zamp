@@ -7,6 +7,7 @@ from app import accounts
 def ignore_local_ai_setting(monkeypatch):
     """Tests must never use the real AI choice from someone's .env file."""
     monkeypatch.setenv("AI_BACKEND", "")
+    monkeypatch.setenv("GROQ_API_KEY", "")
 
 
 @pytest.fixture(autouse=True)

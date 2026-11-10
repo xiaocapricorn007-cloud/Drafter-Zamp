@@ -63,7 +63,7 @@ The AI never has the last word on anything that matters. These are ordinary code
 - **Touchy topics** such as layoffs or lawsuits are blocked, even if the AI likes them.
 - **The confidence score** is plain arithmetic, with limits. A weak link can't score above 65%. A general email can't score above 35%.
 
-The writer also doesn't mark its own work. The readers are separate AI calls that never see its reasoning.
+The readers are separate AI calls that never see the writer's reasoning. With Claude writing and a Groq key set, they also run on a different model, so the writer isn't marking its own work. Where one model does both, as on the hosted version, the score is less independent.
 
 ### Setting up what you sell
 
@@ -102,7 +102,7 @@ The first time someone signs up, they name their company and product. Drafter se
 | Screens | Plain JavaScript, with live updates over server-sent events |
 | Search | [Serper](https://serper.dev) and [Tavily](https://tavily.com) |
 | Email finding | [Hunter](https://hunter.io) |
-| AI | Claude, Gemini, or a local Claude Code login |
+| AI | Groq, Claude, Gemini, or a local Claude Code login |
 | Sending | Gmail API, with permission to send only |
 
 ## Run it
@@ -123,10 +123,12 @@ Open http://127.0.0.1:8000. The last option matters: an open browser tab keeps a
 | Setting | Needed? | What it's for |
 |---|---|---|
 | `TAVILY_API_KEY` | Yes | Reading full pages |
-| `GEMINI_API_KEY` | Yes, unless using Claude Code | The AI work |
+| `GROQ_API_KEY` with `AI_BACKEND=groq` | One AI route is needed | Groq does all the AI work, on its free tier |
+| `GEMINI_API_KEY` | One AI route is needed | The AI work |
 | `SERPER_API_KEY` | Recommended | Finding people and fast, dated results |
 | `HUNTER_API_KEY` | Recommended | Finding work emails |
 | `ANTHROPIC_API_KEY` | Optional | Claude takes over the hard thinking and writing |
+| `GROQ_API_KEY` alone | Optional | Groq runs just the reader tests, so they're independent of a Claude writer |
 | `AI_BACKEND=claude-code` | Optional | Uses your Claude Code login. Only works on the computer running the app |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `TOKEN_KEY` | Only for sending | See below |
 
@@ -208,10 +210,13 @@ tests/           Automated tests and the no-keys preview
 
 ## Put it online
 
-`render.yaml` is ready for [Render](https://render.com). Connect the repo and enter your keys. Two things to know:
+`render.yaml` deploys a free [Render](https://render.com) web service that uses Groq for the AI. In Render, choose **New > Blueprint**, connect this repo, and enter your Groq, Tavily, Serper and Hunter keys when asked.
 
-- Claude Code login only works locally, so a hosted copy needs `GEMINI_API_KEY` on a paid plan, or `ANTHROPIC_API_KEY`.
-- The default disk is wiped on restart. Attach a disk and point `DATABASE_PATH` at it to keep accounts and drafts.
+Three things to know about the free plan:
+
+- It goes to sleep after 15 minutes without visitors, and the next visit takes about a minute to wake it.
+- Its disk is wiped on each restart, so accounts and drafts don't last. A paid disk with `DATABASE_PATH` pointed at it fixes that.
+- Claude Code login only works on your own computer, so it can't be used here.
 
 ## Known limits
 
@@ -220,7 +225,7 @@ tests/           Automated tests and the no-keys preview
 - **Readers are AI stand-ins for people.** Only real reply rates prove an email works.
 - **Timing and quality** have been measured on a small number of real runs, which reached a readable email in about one to two minutes. The latest speed changes are designed to bring that under a minute, but haven't been timed on real runs yet.
 - **Gmail sending** is covered by automated tests with a stand-in mailer, and needs a real connection tested on your own account.
-- **The hosted AI route** is covered by tests with stand-ins. The real runs so far used a local Claude Code login.
+- **The hosted version uses Groq's free tier.** It's far faster than Claude, but in side-by-side tests its emails were more generic and failed the real-fact check more often. Its 8,000 tokens a minute also means a busy moment can add a wait of up to a minute.
 - **Finding work emails** needs a privacy review before real commercial use.
 
 ## What's next

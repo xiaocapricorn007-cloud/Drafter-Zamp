@@ -9,7 +9,8 @@ FRESH_MAX = 15
 PERSONAL_CAP = {"person": 5, "team": 4, "company": 3, "market": 2}
 SENSITIVE_WORDS = re.compile(
     r"\b(lay-?offs?|laid off|job cuts?|redundanc\w+|lawsuits?|sued|data breach|breach(ed)?|"
-    r"bankrupt\w*|fraud|investigation|died|death|passed away|illness|divorce)\b",
+    r"bankrupt\w*|fraud|investigation|died|death|passed away|illness|divorce|restructuring|downsiz\w+|"
+    r"workforce reduction|headcount reduction|cut(?:s|ting)? (?:about |around |nearly |over )?\d[\d,]* (?:jobs|staff|employees|roles|people))\b",
     re.I,
 )
 

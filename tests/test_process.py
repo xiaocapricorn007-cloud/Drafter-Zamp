@@ -597,3 +597,15 @@ def test_a_restart_while_checking_does_not_stay_checking(app_client, tmp_path):
     db.update_run(run_id, tests_pending=True)
     db.init(str(tmp_path / "t.db"))
     assert get(client, run_id)["data"]["tests_pending"] is False
+
+
+@pytest.mark.parametrize("text", [
+    "Freshworks to cut 500 jobs", "It cuts around 1,200 staff this year", "One-time restructuring charges of $8 million",
+    "A major downsizing programme", "A workforce reduction was announced",
+])
+def test_job_cuts_are_touchy_however_they_are_worded(text):
+    assert scoring.is_sensitive({"what": text, "quote": ""}, {})
+
+
+def test_ordinary_cost_talk_is_not_touchy():
+    assert not scoring.is_sensitive({"what": "We cut 3 days from the close", "quote": "They cut costs across the team"}, {})

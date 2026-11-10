@@ -160,12 +160,12 @@ def run_readers(providers, prospect, subject, lines, brief, facts, peers, seed) 
     labelled, answer = lineup(prospect, facts, peers, seed)
     masked = _hide(f"Subject: {subject}\n\n{body_text(lines)}", prospect)
     people = "\n".join(f"{k}: {v}" for k, v in labelled.items())
-    reader = providers.light_json(
+    reader = providers.check_json(
         "reader", READER_SYSTEM, f"<message>\n{masked}\n</message>\n\n<people>\n{people}\n</people>", READER_SCHEMA
     )
     creative = [line["text"] for line in lines if line["kind"] == "creative"]
     first = lines[0]["text"] if lines else ""
-    judge = providers.light_json(
+    judge = providers.check_json(
         "judge",
         JUDGE_SYSTEM,
         f"<intended_idea>{brief['one_idea']}</intended_idea>\n"

@@ -20,6 +20,7 @@ GEMINI_DEEP_MODEL = env("GEMINI_DEEP_MODEL", GEMINI_MODEL)  # the need reasoning
 GEMINI_BACKUPS = [
     m.strip() for m in env("GEMINI_BACKUPS", "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash").split(",") if m.strip()
 ]
+GROQ_MODEL = env("GROQ_MODEL", "openai/gpt-oss-120b")
 DB_PATH = env("DATABASE_PATH", str(ROOT / "drafter.db"))
 SELLER_FILE = env("SELLER_PROFILE", str(ROOT / "seller" / "zamp.json"))
 PEERS_FILE = ROOT / "seller" / "peers.json"
@@ -36,7 +37,7 @@ MAX_WORDS = 130
 
 def missing_keys() -> list[str]:
     """Keys the app cannot run without. Serper and Hunter degrade gracefully; Claude is optional."""
-    has_ai = env("AI_BACKEND") == "claude-code" or env("GEMINI_API_KEY") or env("GOOGLE_API_KEY")
+    has_ai = env("AI_BACKEND") == "claude-code" or env("GROQ_API_KEY") or env("GEMINI_API_KEY") or env("GOOGLE_API_KEY")
     missing = [] if has_ai else ["GEMINI_API_KEY"]
     return missing + ([] if env("TAVILY_API_KEY") else ["TAVILY_API_KEY"])
 

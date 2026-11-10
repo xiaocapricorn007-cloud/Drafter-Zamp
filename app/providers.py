@@ -21,6 +21,9 @@ TAVILY_URL = "https://api.tavily.com/search"
 HUNTER_URL = "https://api.hunter.io/v2/email-finder"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_TRIES = 6
+GROQ_LONGEST_WAIT = 65  # the free plan's limits are per minute, so a minute is always enough
 REST_SECONDS = 120
 
 
@@ -276,8 +279,64 @@ class Providers:
             raise ProviderError("Claude declined this request")
         return response
 
+    # ---- Groq ------------------------------------------------------------
+
+    @property
+    def use_groq(self) -> bool:
+        return config.env("AI_BACKEND") == "groq"
+
+    def _groq_json(self, system: str, user: str, schema: dict, effort: str, longest: int) -> dict:
+        key = config.env("GROQ_API_KEY")
+        if not key:
+            raise ProviderError("Groq key is missing")
+        body = {
+            "model": config.GROQ_MODEL,
+            "reasoning_effort": effort,
+            "include_reasoning": False,
+            "max_completion_tokens": longest,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            "response_format": {"type": "json_schema", "json_schema": {"name": "answer", "strict": True, "schema": schema}},
+        }
+        for _ in range(GROQ_TRIES):
+            try:
+                resp = self._http.post(GROQ_URL, headers={"Authorization": f"Bearer {key}"}, json=body, timeout=120)
+            except httpx.HTTPError as exc:
+                raise ProviderError(f"Groq did not answer: {type(exc).__name__}", busy=True) from exc
+            if resp.status_code == 429:
+                time.sleep(min(float(resp.headers.get("retry-after", 15)), GROQ_LONGEST_WAIT))
+                continue
+            if resp.status_code == 400 and "json_validate_failed" in resp.text:
+                continue  # it occasionally misses the format, and another try usually lands
+            break
+        else:
+            raise ProviderError("Groq stayed busy", busy=True)
+        if resp.status_code != 200:
+            raise ProviderError(f"Groq answered {resp.status_code}: {resp.text[:200]}")
+        try:
+            answer = json.loads(resp.json()["choices"][0]["message"]["content"])
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise ProviderError(f"Groq gave an unreadable answer: {type(exc).__name__}") from exc
+        wrong = matches_schema(schema, answer)
+        if wrong:
+            raise ProviderError(f"Groq gave the wrong shape: {wrong[:3]}")
+        return answer
+
+    def check_json(self, purpose: str, system: str, user: str, schema: dict) -> dict:
+        """The reader tests. On Groq when there's a key, so a Claude writer isn't marking its own work."""
+        if not config.env("GROQ_API_KEY"):
+            return self.light_json(purpose, system, user, schema)
+        try:
+            return self._groq_json(system, user, schema, "low", 1500)
+        except ProviderError as exc:
+            if self.use_groq:
+                raise
+            log.warning("Groq couldn't run the %s check, using the main AI: %s", purpose, exc)
+            return self.light_json(purpose, system, user, schema)
+
     def deep_json(self, purpose: str, system: str, user: str, schema: dict) -> dict:
         """The hard thinking. Claude if a key is set, otherwise Gemini."""
+        if self.use_groq:
+            return self._groq_json(system, user, schema, "medium", 5000)
         if self.use_cli:
             return self._cli_json(system, user, schema, "medium")
         if not self.has_claude:
@@ -294,6 +353,8 @@ class Providers:
 
     def light_json(self, purpose: str, system: str, user: str, schema: dict) -> dict:
         """Simple, high-volume work. Gemini first; Claude steps in only if a Claude key is set."""
+        if self.use_groq:
+            return self._groq_json(system, user, schema, "low", 1500)
         if self.use_cli:
             return self._cli_json(system, user, schema, "low")
         try:

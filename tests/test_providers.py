@@ -328,3 +328,75 @@ def test_agent_turn_keeps_content_for_next_request(local_claude):
     sent = seen[1][1]["messages"][1]["content"][0]
     assert sent["type"] == "tool_use" and sent["id"] == "t1"
     assert all(t["strict"] is True for t in seen[0][1]["tools"])
+
+
+def groq_reply(answer):
+    return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(answer)}}]})
+
+
+def groq_ready(monkeypatch, handler, backend="groq"):
+    monkeypatch.setenv("AI_BACKEND", backend)
+    monkeypatch.setenv("GROQ_API_KEY", "gk")
+    return wired(monkeypatch, handler)
+
+
+def test_groq_does_the_work_when_chosen(monkeypatch):
+    seen = []
+
+    def handler(req):
+        seen.append(json.loads(req.content))
+        assert req.headers["Authorization"] == "Bearer gk" and "groq.com" in str(req.url)
+        return groq_reply({"a": "yes"})
+
+    p = groq_ready(monkeypatch, handler)
+    assert p.deep_json("x", "s", "u", SCHEMA) == {"a": "yes"} and p.light_json("x", "s", "u", SCHEMA) == {"a": "yes"}
+    assert seen[0]["response_format"]["json_schema"]["strict"] is True and seen[0]["reasoning_effort"] == "medium" and seen[1]["reasoning_effort"] == "low"
+
+
+def test_groq_waits_when_the_minute_limit_is_hit(monkeypatch):
+    replies = [httpx.Response(429, headers={"retry-after": "7"}), groq_reply({"a": "yes"})]
+    waits = []
+    monkeypatch.setattr("app.providers.time.sleep", waits.append)
+    p = groq_ready(monkeypatch, lambda req: replies.pop(0))
+    assert p.deep_json("x", "s", "u", SCHEMA) == {"a": "yes"} and waits == [7.0]
+
+
+def test_groq_retries_a_missed_format(monkeypatch):
+    replies = [httpx.Response(400, text='{"error":{"code":"json_validate_failed"}}'), groq_reply({"a": "yes"})]
+    assert groq_ready(monkeypatch, lambda req: replies.pop(0)).deep_json("x", "s", "u", SCHEMA) == {"a": "yes"}
+
+
+def test_groq_wrong_shape_and_errors_are_reported(monkeypatch):
+    with pytest.raises(ProviderError):
+        groq_ready(monkeypatch, lambda req: groq_reply({"b": "no"})).deep_json("x", "s", "u", SCHEMA)
+    with pytest.raises(ProviderError):
+        groq_ready(monkeypatch, lambda req: httpx.Response(401, text="bad key")).deep_json("x", "s", "u", SCHEMA)
+
+
+def test_reader_checks_use_groq_even_with_another_writer(monkeypatch):
+    p = groq_ready(monkeypatch, lambda req: groq_reply({"a": "groq"}), backend="claude-code")
+    monkeypatch.setattr(p, "light_json", lambda *a: {"a": "main"})
+    assert p.check_json("reader", "s", "u", SCHEMA) == {"a": "groq"}
+
+
+def test_reader_checks_fall_back_when_groq_fails(monkeypatch):
+    p = groq_ready(monkeypatch, lambda req: httpx.Response(500, text="down"), backend="claude-code")
+    monkeypatch.setattr(p, "light_json", lambda *a: {"a": "main"})
+    assert p.check_json("reader", "s", "u", SCHEMA) == {"a": "main"}
+
+
+def test_reader_checks_use_the_main_ai_without_a_groq_key(monkeypatch):
+    p = wired(monkeypatch, lambda req: httpx.Response(500))
+    monkeypatch.setattr(p, "light_json", lambda *a: {"a": "main"})
+    assert p.check_json("reader", "s", "u", SCHEMA) == {"a": "main"}
+
+
+def test_groq_alone_is_enough_to_run(monkeypatch):
+    from app import config
+
+    monkeypatch.setenv("AI_BACKEND", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "gk")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("GOOGLE_API_KEY", "")
+    monkeypatch.setenv("TAVILY_API_KEY", "t")
+    assert config.missing_keys() == []
