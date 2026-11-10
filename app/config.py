@@ -30,6 +30,7 @@ MAX_PAGES = 14
 MAX_PAGE_CHARS = 12_000
 MAX_SUBMITS = 2  # the first try plus one rewrite
 MAX_QUESTIONS = 6
+WRITER_FACTS = 15  # more than this made writing slower without making it better
 MAX_WORDS = 130
 
 

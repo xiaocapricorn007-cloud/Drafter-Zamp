@@ -2,7 +2,7 @@
 import json
 import logging
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import date, datetime
 
 from . import answers, art, checks, config, db, profile, prompts, scoring, verify
@@ -23,6 +23,8 @@ STAGES = [
 ]
 
 _pool = ThreadPoolExecutor(max_workers=4)
+_ahead_pool = ThreadPoolExecutor(max_workers=4)
+_ahead: dict[str, tuple[str, Future]] = {}  # questions being written while the person is looked up
 run_inline = False  # tests turn this on
 
 
@@ -111,11 +113,13 @@ def _signed_by(seller: dict, run: dict) -> dict:
 
 
 def find_person(run_id: str, providers) -> None:
-    prospect = db.get_run(run_id)["prospect"]
+    run = db.get_run(run_id)
+    prospect = run["prospect"]
     name, title, company = prospect["name"], prospect["title"], prospect["company"]
     stage(run_id, "find", "running")
     if _use_linkedin(run_id, providers, prospect):
         return
+    _ask_ahead(run_id, providers, prospect, _seller_of(run))
 
     queries = [f'"{name}" "{company}"', f'"{name}" {title} {company} linkedin', f'"{name}" {title}']
     results, seen, failures = [], set(), 0
@@ -285,6 +289,7 @@ def research_and_write(run_id: str, providers) -> None:
 
 def write_from_details(run_id: str, providers, reason: str) -> None:
     """Always possible: write from the job and the offer alone, and say so."""
+    _ahead.pop(run_id, None)
     run = db.get_run(run_id)
     seller = _seller_of(run)
     for key in ("need", "read", "facts"):
@@ -345,8 +350,8 @@ def _queries(prospect: dict, seller: dict) -> list[tuple[str, str]]:
     return queries
 
 
-def _plan_questions(run_id: str, providers, prospect: dict, seller: dict, found: dict | None = None) -> list[dict]:
-    stage(run_id, "need", "running")
+def _write_questions(providers, prospect: dict, seller: dict, found: dict | None = None) -> list[dict]:
+    """Empty if it fails. Needs only what was typed, so it can run before the person is confirmed."""
     packet = {
         "person": {k: prospect[k] for k in ("name", "title", "company")},
         "what_this_job_cares_about": role_focus(prospect["title"], seller)["cares_about"],
@@ -359,7 +364,7 @@ def _plan_questions(run_id: str, providers, prospect: dict, seller: dict, found:
         asked = providers.light_json("questions", prompts.QUESTIONS_SYSTEM, json.dumps(packet, indent=1), prompts.QUESTIONS_SCHEMA)["questions"]
     except ProviderError as exc:
         log.warning("Couldn't plan the questions: %s", exc)
-        asked = []
+        return []
     anchors = (verify.normalise(prospect["name"].split()[-1]), verify.company_core(prospect["company"]))
     questions = []
     for item in asked[: config.MAX_QUESTIONS]:
@@ -368,6 +373,36 @@ def _plan_questions(run_id: str, providers, prospect: dict, seller: dict, found:
             query = f'{query} "{prospect["company"]}"'  # a search with no name in it would find anyone
         if query:
             questions.append({"ask": item["ask"], "query": query, "news": bool(item["news"])})
+    return questions
+
+
+def _ask_ahead(run_id: str, providers, prospect: dict, seller: dict) -> None:
+    key = _prospect_key(prospect)
+    if run_inline:
+        ready: Future = Future()
+        ready.set_result(_write_questions(providers, prospect, seller))
+        _ahead[run_id] = (key, ready)
+    else:
+        _ahead[run_id] = (key, _ahead_pool.submit(_write_questions, providers, prospect, seller))
+
+
+def _questions_from_ahead(run_id: str, prospect: dict) -> list[dict] | None:
+    """None means they have to be written now, such as when the person turned out to work elsewhere."""
+    key, job = _ahead.pop(run_id, (None, None))
+    if job is None or key != _prospect_key(prospect):
+        return None
+    try:
+        return job.result(timeout=30)
+    except Exception as exc:
+        log.warning("Questions written ahead weren't usable: %s", exc)
+        return None
+
+
+def _plan_questions(run_id: str, providers, prospect: dict, seller: dict, found: dict | None = None) -> list[dict]:
+    stage(run_id, "need", "running")
+    questions = _questions_from_ahead(run_id, prospect)
+    if questions is None:
+        questions = _write_questions(providers, prospect, seller, found)
     if not questions:
         questions = [{"ask": q, "query": q, "news": topic == "news"} for q, topic in _queries(prospect, seller)[: config.MAX_QUESTIONS]]
     for question in questions:
@@ -466,7 +501,7 @@ def _choosing_packet(prospect: dict, seller: dict, facts: list[dict]) -> dict:
         "suggested_ask": focus["ask"],
         "seller": {"name": seller["seller"], "product": seller.get("product", ""), "about": seller["about"], "tone": seller["tone"]},
         "offerings": [{k: o[k] for k in ("id", "name", "plain", "proof")} for o in seller["offerings"]],
-        "facts": [{k: f[k] for k in ("id", "quote", "context", "date", "about", "answers")} for f in facts],
+        "facts": [{k: f[k] for k in ("id", "quote", "context", "date", "about", "answers")} for f in facts[: config.WRITER_FACTS]],
     }
 
 
@@ -528,12 +563,29 @@ def _draw_card(run_id: str, providers, brief: dict, token: str) -> None:
         stage(run_id, "art", "done")
 
 
+def _read_the_draft(run_id: str, providers, run: dict, hook: dict, facts: list[dict], draft: dict, token: str) -> None:
+    """The independent readers, while the rep is already reading. A poor result lowers the score and doesn't rewrite."""
+    try:
+        readers = checks.run_readers(providers, run["prospect"], draft["subject"], draft["lines"], draft["brief"], facts, config.load_peers(), f"{run_id}-{token[:6]}")
+    except ProviderError as exc:
+        log.warning("Reader tests failed: %s", exc)
+        readers = None
+    problems = checks.reader_problems(readers, bool(hook.get("general"))) if readers else []
+    sure = scoring.confidence(
+        hook, readers, True, bool(problems), bool(run["data"].get("unconfirmed")), bool(run["data"].get("link_unseen")),
+        facts_ok=True, nothing_personal=not any(f["about"] == "person" for f in facts),
+    )
+    if db.finish_tests(run_id, token, bool(problems), tests=readers, problems=problems, confidence=sure, tests_pending=False):
+        note(run_id, "test", "We couldn't finish the reader test" if readers is None else "It passed every test" if not problems else f"Readers found {len(problems)} thing{'s' if len(problems) > 1 else ''} to look at")
+        stage(run_id, "test", "done")
+
+
 def write(run_id: str, providers, hook_pos: int, first_draft: dict | None = None) -> None:
     """Write, let code check it, and give the writer one chance to fix what code found."""
     stage(run_id, "write", "running")
     stage(run_id, "test", "todo")
     run = db.get_run(run_id)
-    seller, peers = _seller_of(run), config.load_peers()
+    seller = _seller_of(run)
     hook = run["data"]["hooks"][hook_pos]
     offering = next(o for o in seller["offerings"] if o["id"] == hook["offering_id"])
     facts = {f["id"]: f for f in run["data"]["facts"]}
@@ -544,45 +596,50 @@ def write(run_id: str, providers, hook_pos: int, first_draft: dict | None = None
         if draft is None:
             draft = providers.deep_json("writer", prompts.WRITER_SYSTEM, json.dumps(packet, indent=1), prompts.WRITER_SCHEMA)
         subject, lines, brief = draft["subject"], draft["lines"], draft["brief"]
-        stage(run_id, "write", "done")
-        stage(run_id, "test", "running")
         wrong_facts = checks.check_facts(lines, facts, offering["proof"], need_fact=bool(hook["fact_ids"]))
         rules = wrong_facts + checks.check_style(subject, lines) + checks.check_card(brief)
-        readers = None
-        if not rules:  # only spend AI calls once the free checks pass
-            readers = checks.run_readers(providers, run["prospect"], subject, lines, brief, ordered, peers, f"{run_id}-{attempt}")
-        problems = rules + (checks.reader_problems(readers, bool(hook.get("general"))) if readers else [])
-        if not problems:
-            note(run_id, "test", "It passed every test")
+        if not rules:
             break
-        note(run_id, "test", f"Try {attempt}: found {len(problems)} thing{'s' if len(problems) > 1 else ''} to fix")
+        note(run_id, "test", f"Try {attempt}: found {len(rules)} thing{'s' if len(rules) > 1 else ''} to fix")
         if attempt < config.MAX_SUBMITS:
-            stage(run_id, "test", "todo")
-            stage(run_id, "write", "running")
-            packet = {**packet, "your_last_draft": {"subject": subject, "lines": lines, "brief": brief}, "problems": problems}
+            packet = {**packet, "your_last_draft": {"subject": subject, "lines": lines, "brief": brief}, "problems": rules}
             draft = None
-    stage(run_id, "test", "done")
+    stage(run_id, "write", "done")
 
     first_name = run["prospect"]["name"].split()[0]
     body = checks.compose_body(lines, first_name, _signed_by(seller, run))
-    sure = scoring.confidence(
-        hook, readers, not rules, bool(problems), bool(run["data"].get("unconfirmed")), bool(run["data"].get("link_unseen")),
+    token = uuid.uuid4().hex
+    checking = not rules
+    stage(run_id, "test", "running" if checking else "done")
+    stage(run_id, "art", "running")  # before the email appears, so the page knows more is coming
+    sure = None if checking else scoring.confidence(
+        hook, None, False, True, bool(run["data"].get("unconfirmed")), bool(run["data"].get("link_unseen")),
         facts_ok=not wrong_facts, nothing_personal=not any(f["about"] == "person" for f in facts.values()),
     )
-    token = uuid.uuid4().hex
-    stage(run_id, "art", "running")  # before the email appears, so the page knows a picture is coming
+    finished = {"subject": subject, "lines": lines, "brief": brief, "body": body, "art": None, "token": token}
     db.update_run(
         run_id,
-        status="flagged" if problems else "ready",
-        draft={"subject": subject, "lines": lines, "brief": brief, "body": body, "art": None, "token": token},
+        status="flagged" if rules else "ready",
+        draft=finished,
         seller_name=seller["seller"],
         confidence=sure,
-        tests=readers,
-        problems=problems,
+        tests=None,
+        tests_pending=checking,
+        problems=rules,
         rules_ok=not rules,
         hook_pos=hook_pos,
     )
-    _draw_card(run_id, providers, brief, token)
+
+    jobs = [lambda: _draw_card(run_id, providers, brief, token)]
+    if checking:
+        jobs.append(lambda: _read_the_draft(run_id, providers, run, hook, ordered, finished, token))
+    if run_inline:
+        for job in jobs:
+            job()
+    else:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            for result in [pool.submit(job) for job in jobs]:
+                result.result()
 
 
 def launch_next_hook(run_id: str, providers, pos: int) -> None:

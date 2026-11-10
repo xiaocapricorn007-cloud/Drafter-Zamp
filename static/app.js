@@ -221,6 +221,9 @@ async function runView(id) {
   };
 }
 
+const REVIEWING = new Set(["ready", "flagged"]);
+const reviewKey = (run) => JSON.stringify([run.status, run.data.tests_pending, run.data.confidence, run.data.problems]);
+
 async function refresh(state) {
   let run;
   try {
@@ -237,14 +240,22 @@ async function refresh(state) {
   }
   if (live !== state) return;
   state.run = run;
-  if (run.status !== state.shown) {
+  if (run.status !== state.shown && REVIEWING.has(run.status) && REVIEWING.has(state.shown)) {
+    state.shown = run.status;  // only the score changed, so leave what's being typed alone
+    loadSidebar();
+  } else if (run.status !== state.shown) {
     const first = state.shown === null;
     state.shown = run.status;
     state.setArt = null;
+    state.patchReview = null;
     loadSidebar();
     state.stepNodes = new Map();
     const render = () => { if (live === state) drawRun(state, run); };
     if (first) render(); else await changeView(render);
+  }
+  if (state.patchReview && reviewKey(run) !== state.reviewKey) {
+    state.reviewKey = reviewKey(run);
+    state.patchReview(run);
   }
   patchSteps(state, state.run);
   if (state.setArt && run.data.draft && run.data.draft.art !== state.art) state.setArt(run.data.draft.art);
@@ -545,7 +556,7 @@ function cardCanvas(run, headline, line) {
 const unfinished = new Map();
 
 function reviewScreen(state, run, heading) {
-  const { draft, tests, problems, rules_ok: rulesOk, facts = [], set_aside: aside = [], email, used_saved: saved, hooks = [], hook_pos: pos = 0, confidence: sure, seller_name: seller = "" } = run.data;
+  const { draft, facts = [], email, hooks = [], hook_pos: pos = 0, seller_name: seller = "" } = run.data;
   const hook = currentHook(run);
   const factMap = Object.fromEntries(facts.map((f) => [f.id, f]));
   const usedIds = [...new Set(draft.lines.flatMap((l) => l.facts))];
@@ -587,13 +598,16 @@ function reviewScreen(state, run, heading) {
   };
 
   const finish = () => act({ action: "approve", subject: subject.value, body: body.value, card_headline: words.value });
-  const steps = stepsList(state);
-  let i = 1;
-  const sections = [
-    sure && confidenceBlock(sure),
+  const buildSide = (r) => {
+    const { tests, problems, rules_ok: rulesOk, set_aside: aside = [], used_saved: saved, confidence: sure, tests_pending: checking } = r.data;
+    state.stepNodes = new Map();
+    const steps = stepsList(state);
+    let i = 1;
+    return [
+    sure ? confidenceBlock(sure) : checking && el("section", { class: "sure", style: "--i:0" }, el("h3", {}, "How sure we are"), el("p", { class: "small card-wait" }, "Checking it now. This takes a few seconds.")),
     saved && el("div", { class: "notice" }, saved),
-    run.data.send_problem && el("div", { class: "notice" }, el("strong", {}, "This didn't go out"), el("div", { class: "small" }, run.data.send_problem)),
-    run.status === "flagged" && el("div", { class: "notice" }, el("strong", {}, "This one needs a closer look"),
+    r.data.send_problem && el("div", { class: "notice" }, el("strong", {}, "This didn't go out"), el("div", { class: "small" }, r.data.send_problem)),
+    r.status === "flagged" && el("div", { class: "notice" }, el("strong", {}, "This one needs a closer look"),
       el("div", { class: "small" }, "We tried a few times but couldn't get it fully right:"),
       el("ul", {}, problems.map((text) => el("li", {}, text)))),
     el("section", { style: `--i:${i++}` }, el("h3", {}, "The big idea"), el("p", { class: "big-idea" }, draft.brief.one_idea)),
@@ -614,10 +628,19 @@ function reviewScreen(state, run, heading) {
     aside.length > 0 && el("section", { style: `--i:${i++}` }, el("details", {}, el("summary", {}, `Ideas we left out (${aside.length})`),
       el("ul", { class: "found" }, aside.map((a) => el("li", {}, a.summary, el("div", { class: "small" }, a.reason)))))),
     el("section", { style: `--i:${i++}` }, el("details", {}, el("summary", {}, "See how we got here"), steps)),
-  ];
+    ];
+  };
+  const pageTitle = (status) => (status === "flagged" ? "Have a look at this one" : "Here's your email");
+  const titleEl = el("h1", { class: "title enter", style: "--i:1;margin:18px 0 30px" }, pageTitle(run.status));
+  const sideBox = el("aside", { class: "side" }, buildSide(run));
+  state.reviewKey = reviewKey(run);
+  state.patchReview = (r) => {
+    titleEl.textContent = pageTitle(r.status);
+    sideBox.replaceChildren(...buildSide(r).filter(Boolean));
+  };
 
   return el("div", { class: "page wide" }, heading,
-    el("h1", { class: "title enter", style: "--i:1;margin:18px 0 30px" }, run.status === "flagged" ? "Have a look at this one" : "Here's your email"),
+    titleEl,
     el("div", { class: "review" },
       composeWindow({
         to: toBox,
@@ -632,7 +655,7 @@ function reviewScreen(state, run, heading) {
           el("button", { class: "btn quiet", onclick: () => act({ action: "discard" }) }, "Set aside"),
         ],
       }),
-      el("aside", { class: "side" }, sections),
+      sideBox,
     ),
   );
 }

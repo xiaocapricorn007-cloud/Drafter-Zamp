@@ -111,6 +111,8 @@ def init(path: str | None = None) -> None:
                 "UPDATE runs SET status='failed', data=?, updated_at=? WHERE id=?",
                 (json.dumps(data), time.time(), row["id"]),
             )
+        for row in c.execute("SELECT id, data FROM runs WHERE data LIKE '%\"tests_pending\": true%'").fetchall():
+            c.execute("UPDATE runs SET data=? WHERE id=?", (json.dumps({**json.loads(row["data"]), "tests_pending": False}), row["id"]))
         for row in c.execute("SELECT id, setup FROM users WHERE setup IS NOT NULL").fetchall():
             setup = json.loads(row["setup"])
             if setup.get("status") in ("finding", "researching"):
@@ -372,6 +374,23 @@ def set_art(run_id: str, token: str, picture: str | None) -> bool:
         data["draft"] = {**draft, "art": picture}
         c.execute("UPDATE runs SET data=?, updated_at=? WHERE id=?", (json.dumps(data), time.time(), run_id))
         c.execute("COMMIT")
+    return True
+
+
+def finish_tests(run_id: str, token: str, flagged: bool, **fields) -> bool:
+    """Results arrive after the email is on screen, when the rep may already have moved on."""
+    with _conn() as c:
+        c.execute("BEGIN IMMEDIATE")
+        row = c.execute("SELECT status, data FROM runs WHERE id=? AND locked=0", (run_id,)).fetchone()
+        data = json.loads(row["data"]) if row else {}
+        if (data.get("draft") or {}).get("token") != token:
+            c.execute("ROLLBACK")
+            return False
+        status = "flagged" if flagged and row["status"] == "ready" else row["status"]
+        c.execute("UPDATE runs SET status=?, data=?, updated_at=? WHERE id=?", (status, json.dumps({**data, **fields}), time.time(), run_id))
+        c.execute("COMMIT")
+    if status != row["status"]:
+        add_event(run_id, "status", {"status": status})
     return True
 
 

@@ -1,4 +1,6 @@
 """What each AI step is asked to do, and the exact shape of the answer it must give."""
+from .checks import STOCK_PHRASES
+from .config import MAX_WORDS
 
 
 def _obj(**props) -> dict:
@@ -119,6 +121,14 @@ Each line has a short "why": a plain sentence saying what that line is doing, wr
 
 If the packet includes your_last_draft and problems, fix exactly those problems and keep what was working. Get it right in one answer."""
 
+
+# The same limits code enforces, so the first try can pass and no rewrite is needed.
+_STYLE_RULES = f"""- The subject is one to seven words.
+- The email is at most {MAX_WORDS} words.
+- Never use any of these overused phrases, in any form: {", ".join(STOCK_PHRASES)}.
+- The sticky_line and card_line contain no numbers and no quotation marks.
+"""
+WRITER_SYSTEM = WRITER_SYSTEM.replace("Hard limits:\n", "Hard limits:\n" + _STYLE_RULES)
 
 _LINE = _obj(
     text=STR,

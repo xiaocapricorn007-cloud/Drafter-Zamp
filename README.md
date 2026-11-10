@@ -40,16 +40,17 @@ flowchart TD
 
 | Stage | What happens | Done by |
 |---|---|---|
-| Find the person | Searches by name, or reads Google's listing of an exact LinkedIn link | Serper, AI |
+| Find the person | Searches by name, or reads Google's listing of an exact LinkedIn link. The questions are written at the same time | Serper, AI |
 | Confirm | Nothing else runs until the rep agrees. Skipped when the link matches the typed details | Rep |
 | Find email | Only if it was left blank. Never blocks the run | Hunter |
-| Ask | Writes up to six questions for this person, based on what's being sold | AI |
+| Ask | Writes up to six questions for this person, based on what's being sold, and rewrites them only if the person has moved | AI |
 | Search | Every question goes to both search services. LinkedIn is never opened | Serper, Tavily |
 | Keep facts | Keeps exact sentences, and drops other people and touchy topics | Code |
-| Choose and write | Rates the openings and writes the email in one step | AI |
+| Choose and write | Rates the openings and writes the email in one step, from the 15 strongest facts | AI |
 | Rank | Weighted score, hard blocks and a threshold. Can overrule the AI's choice | Code |
-| Test | Facts and style in code, then two separate readers. One rewrite at most | Code, AI |
-| Card | A vector picture of the email's idea, drawn after the email is on screen | AI, code |
+| Check | Facts and style in code before the email is shown. One rewrite at most | Code |
+| Readers | Two separate readers test the email while the rep reads it, then the score fills in | AI |
+| Card | A vector picture of the email's idea, drawn at the same time as the reader test | AI, code |
 | Review | The rep edits, tries another opening, finishes, or sets it aside | Rep |
 
 ### AI suggests, code decides
@@ -217,7 +218,7 @@ tests/           Automated tests and the no-keys preview
 - **LinkedIn posts aren't read.** They'd make strong openings, but LinkedIn doesn't allow scraping.
 - **Lesser-known people** may have little public information. Drafter says so through a lower score rather than padding the email.
 - **Readers are AI stand-ins for people.** Only real reply rates prove an email works.
-- **Timing and quality** have been measured on a small number of real runs, which reached a readable email in about one to two minutes.
+- **Timing and quality** have been measured on a small number of real runs, which reached a readable email in about one to two minutes. The latest speed changes are designed to bring that under a minute, but haven't been timed on real runs yet.
 - **Gmail sending** is covered by automated tests with a stand-in mailer, and needs a real connection tested on your own account.
 - **The hosted AI route** is covered by tests with stand-ins. The real runs so far used a local Claude Code login.
 - **Finding work emails** needs a privacy review before real commercial use.

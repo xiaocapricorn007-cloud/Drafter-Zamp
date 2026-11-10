@@ -67,7 +67,8 @@ def check_facts(lines: list[dict], facts: dict[str, dict], proof: list[str] = ()
         else:
             if QUOTED.search(text):
                 problems.append(f"Line {n} is marked {line['kind']} but contains a quotation.")
-            if line["kind"] == "creative" and verify.numbers_in(text):
+            # "Two different jobs" is a figure of speech. "4 open roles" or "nine offices" is a claim.
+            if line["kind"] == "creative" and (re.search(r"\d", text) or verify.numbers_in(text) - {"2", "3"}):
                 problems.append(f"Line {n} is marked creative but contains a number.")
     if need_fact and not any(line["kind"] == "fact" for line in lines):
         problems.append("The message has no line based on a real fact.")

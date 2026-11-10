@@ -496,3 +496,104 @@ def test_unlisted_link_with_nothing_personal_scores_lower():
     some = scoring.confidence({"score": 80}, readers, True, False, False, link_unseen=True)
     none = scoring.confidence({"score": 80}, readers, True, False, False, link_unseen=True, nothing_personal=True)
     assert some["score"] == 60 and none["score"] == 40 and any("personally" in r for r in none["bad"])
+
+
+@pytest.mark.parametrize("text,allowed", [
+    ("Owning a payments operation and processing it are two different jobs.", True),
+    ("Three things tend to go wrong at month-end.", True),
+    ("You have 2 teams doing this.", False),
+    ("Your nine offices all do this differently.", False),
+])
+def test_small_number_words_are_figures_of_speech(text, allowed):
+    problems = [x for x in checks.check_facts([{"text": text, "kind": "creative", "facts": []}], {}, need_fact=False) if "number" in x]
+    assert (not problems) is allowed
+
+
+def test_the_writer_gets_only_the_best_facts():
+    facts = [{"id": f"f{n}", "quote": "q", "context": "", "date": "", "about": "company", "answers": ""} for n in range(36)]
+    packet = pipeline._choosing_packet(PERSON, __import__("app.config", fromlist=["load_seller"]).load_seller(), facts)
+    assert len(packet["facts"]) == 15 and packet["facts"][0]["id"] == "f0"
+
+
+def test_questions_are_written_while_finding_the_person(app_client):
+    client, fake = app_client
+    run_id = start(client)
+    assert ("light", "questions") in fake.calls and not [c for c in fake.calls if c[0] == "research"]
+    confirm(client, run_id)
+    assert fake.calls.count(("light", "questions")) == 1
+
+
+def test_questions_are_rewritten_if_the_person_works_elsewhere(app_client):
+    client, fake = app_client
+    fake.scenario = "moved"
+    confirm(client, start(client))
+    assert fake.calls.count(("light", "questions")) == 2
+
+
+def test_the_writer_is_told_the_style_rules():
+    from app import prompts
+
+    for text in (prompts.WRITER_SYSTEM, prompts.PLAN_WRITE_SYSTEM):
+        assert "one to seven words" in text and "i came across" in text
+
+
+def test_a_reader_failure_lowers_the_score_without_a_rewrite(app_client, monkeypatch):
+    client, fake = app_client
+    monkeypatch.setattr(fake, "_judge", lambda user: {"same_idea": False, "would_open": True, "kind": True, "adds_outside_fact": False, "note": ""})
+    run_id = start(client)
+    confirm(client, run_id)
+    run = get(client, run_id)
+    assert run["status"] == "flagged" and run["data"]["problems"] and run["data"]["confidence"]["score"] <= 50
+    assert ("deep", "writer") not in fake.calls and run["data"]["tests_pending"] is False
+
+
+def test_email_appears_before_the_readers_finish(app_client, monkeypatch):
+    client, fake = app_client
+    seen = {}
+    real = fake._reader
+
+    def watch(user):
+        run = db.list_runs(db.find_user("Rep One")["id"])[0]
+        seen.update(status=run["status"], pending=run["data"]["tests_pending"], sure=run["data"]["confidence"])
+        return real(user)
+
+    monkeypatch.setattr(fake, "_reader", watch)
+    confirm(client, start(client))
+    assert seen == {"status": "ready", "pending": True, "sure": None}
+
+
+def test_reader_outage_still_leaves_a_usable_email(app_client, monkeypatch):
+    client, fake = app_client
+
+    def down(user):
+        raise pipeline.ProviderError("busy")
+
+    monkeypatch.setattr(fake, "_reader", down)
+    run_id = start(client)
+    confirm(client, run_id)
+    run = get(client, run_id)
+    assert run["status"] == "ready" and run["data"]["tests"] is None and run["data"]["tests_pending"] is False and run["data"]["confidence"]
+
+
+def test_late_results_never_touch_finished_locked_or_replaced_drafts(app_client):
+    client, _ = app_client
+    run_id = start(client)
+    confirm(client, run_id)
+    token = get(client, run_id)["data"]["draft"]["token"]
+    assert db.finish_tests(run_id, "an old draft", True, problems=["x"]) is False
+    client.post(f"/api/runs/{run_id}/review", json={"action": "approve", "subject": "s", "body": "b", "card_headline": "c"})
+    assert db.finish_tests(run_id, token, True, problems=["x"]) is True and get(client, run_id)["status"] == "approved"
+    other = start(client)
+    confirm(client, other)
+    other_token = get(client, other)["data"]["draft"]["token"]
+    client.post(f"/api/runs/{other}/lock", json={"code": "long-code-1234"})
+    assert db.finish_tests(other, other_token, True, problems=["x"]) is False and db.get_run(other)["data"] == {}
+
+
+def test_a_restart_while_checking_does_not_stay_checking(app_client, tmp_path):
+    client, _ = app_client
+    run_id = start(client)
+    confirm(client, run_id)
+    db.update_run(run_id, tests_pending=True)
+    db.init(str(tmp_path / "t.db"))
+    assert get(client, run_id)["data"]["tests_pending"] is False
